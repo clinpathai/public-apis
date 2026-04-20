@@ -1,0 +1,38 @@
+[
+  {
+    "source_node": {
+      "type": "Doctor",
+      "name": "Alice Wang",
+      "specialty": "Oncologist"
+    },
+    "target_node": {
+      "type": "Institution",
+      "name": "Memorial Sloan Kettering Cancer Center"
+    },
+    "relationship": "AFFILIATED_WITH"
+  },
+  {
+    "source_node": {
+      "type": "Doctor",
+      "name": "James Wilson",
+      "specialty": null
+    },
+    "target_node": {
+      "type": "Institution",
+      "name": "Memorial Sloan Kettering Cancer Center"
+    },
+    "relationship": "AFFILIATED_WITH"
+  },
+  {
+    "source_node": {
+      "type": "Doctor",
+      "name": "Emily Chen",
+      "specialty": "Pathology Specialist"
+    },
+    "target_node": {
+      "type": "Institution",
+      "name": "Memorial Sloan Kettering Cancer Center"
+    },
+    "relationship": "AFFILIATED_WITH"
+  }
+]

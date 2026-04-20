@@ -1,94 +1,182 @@
 import json
 import re
+import sys
 
 class MedicalNetworkExtractor:
     def __init__(self):
-        self.doc_pattern = r'\b(?:Dr\.|Professor|Prof\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
-        self.inst_keywords = ["Hospital", "Cancer Center", "Center", "Institute", "University", "Medicine", "Clinic"]
-        self.spec_keywords = ["oncologist", "cardiologist", "pathology specialist", "surgeon", "specialist"]
+        # Configuration for heuristics
+        self.spec_keywords = [
+            "oncologist", "cardiologist", "pathology specialist", "surgeon",
+            "specialist", "physician", "internist", "pediatrician", "pathology"
+        ]
+        self.inst_keywords = ["Hospital", "Cancer Center", "Center", "Institute", "University", "Medicine", "Clinic", "School of Medicine"]
 
     def clean_name(self, name):
-        name = re.sub(r'^(Dr\.|Dr|Professor|Prof\.)\s+', '', name, flags=re.IGNORECASE)
+        """Strips Dr., MD, etc."""
+        name = re.sub(r'^(Dr\.|Professor|Prof\.)\s+', '', name, flags=re.IGNORECASE)
         name = re.sub(r',\s*(MD|PhD|FACS|MPH|DO|M\.D\.|P\.H\.D\.)\b', '', name, flags=re.IGNORECASE)
         return name.strip()
 
     def extract(self, text):
         results = []
 
-        # 1. Entity Extraction
-        doctors = []
-        for m in re.finditer(self.doc_pattern, text):
-            doctors.append({"name": self.clean_name(m.group(1)), "start": m.start(), "end": m.end()})
+        # 1. Pre-process text to standardize for regex (handling Dr. correctly)
+        # Avoid splitting sentences on Dr.
+        norm_text = text.replace("Dr. ", "Dr_")
 
-        institutions = []
-        inst_pattern = r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:' + "|".join(self.inst_keywords) + r')|University of Pennsylvania)\b'
-        for m in re.finditer(inst_pattern, text):
-            institutions.append({"name": m.group(0), "start": m.start(), "end": m.end()})
+        # 2. Identify Doctors
+        docs = []
+        doc_pattern = r'Dr_([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+        for m in re.finditer(doc_pattern, norm_text):
+            full_name = m.group(1)
+            docs.append({
+                "name": self.clean_name(full_name),
+                "start": m.start(),
+                "end": m.end(),
+                "institution": None,
+                "specialty": None
+            })
 
-        # 2. Logic Mapping
-        doc_map = {d["name"]: d for d in doctors}
+        # 3. Identify Institutions
+        insts = []
+        kw_pattern = "|".join(self.inst_keywords)
+        # Handle "University of [X]" as well
+        inst_pattern = r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:' + kw_pattern + r')|University of [A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b'
+        for m in re.finditer(inst_pattern, norm_text):
+            insts.append({
+                "name": m.group(0).strip(),
+                "start": m.start(),
+                "end": m.end()
+            })
 
-        # Specialties
-        for d_name, d in doc_map.items():
-            spec = "null"
-            context = text[max(0, d["start"]-100):min(len(text), d["end"]+100)]
+        # 4. Sentence Split for local context
+        sentences_norm = re.split(r'\.\s+', norm_text)
+        sentences = [s.replace("Dr_", "Dr. ") for s in sentences_norm]
+
+        # 5. Extract specialties globally for each doctor
+        for doc in docs:
+            # Look in a window around the original text
+            ctx = norm_text[max(0, doc["start"]-100):min(len(norm_text), doc["end"]+100)]
             for s in self.spec_keywords:
-                if s in context.lower():
-                    spec = s.title()
+                if re.search(fr'\b{s}\b', ctx, re.IGNORECASE):
+                    if s == "pathology specialist" or s == "pathology":
+                        doc["specialty"] = "Pathology Specialist"
+                    else:
+                        doc["specialty"] = s.title()
                     break
-            d["specialty"] = spec
 
-        # Affiliations
-        # Alice Wang
-        if "Alice Wang" in doc_map:
-            results.append({
-                "source_node": {"type": "Doctor", "name": "Alice Wang", "specialty": "Oncologist"},
-                "target_node": {"type": "Institution", "name": "Memorial Sloan Kettering Cancer Center"},
-                "relationship": "AFFILIATED_WITH"
-            })
+        # 6. First Pass: Direct Affiliations (same sentence)
+        for doc in docs:
+            for snt in sentences:
+                if doc["name"] in snt or doc["name"].split()[-1] in snt:
+                    # Found the sentence for this doc
+                    for inst in insts:
+                        if inst["name"] in snt:
+                            # Direct mention of [Doc] and [Inst] in same sentence
+                            # Check for "at" or "from" association
+                            if re.search(fr'\b{re.escape(doc["name"].split()[-1])}\b.*?\b(?:at|from)\b.*?\b{re.escape(inst["name"])}\b', snt, re.IGNORECASE):
+                                doc["institution"] = inst["name"]
+                                break
+                    if doc["institution"]: break
 
-        # James Wilson
-        if "James Wilson" in doc_map:
-            results.append({
-                "source_node": {"type": "Doctor", "name": "James Wilson", "specialty": "null"},
-                "target_node": {"type": "Institution", "name": "University of Pennsylvania"},
-                "relationship": "AFFILIATED_WITH"
-            })
+        # 7. Second Pass: Colleague/Sentence Inference
+        for doc in docs:
+            if not doc["institution"]:
+                 for snt in sentences:
+                      if doc["name"] in snt or doc["name"].split()[-1] in snt:
+                           # Check for "colleague" relationship in this sentence
+                           if "colleague" in snt.lower():
+                                # Look for another doctor in this sentence who HAS an institution
+                                for other_doc in docs:
+                                     if other_doc["name"] != doc["name"] and other_doc["institution"]:
+                                          if other_doc["name"] in snt or other_doc["name"].split()[-1] in snt:
+                                               doc["institution"] = other_doc["institution"]
+                                               break
+                      if doc["institution"]: break
 
-        # Emily Chen (Colleague of Alice Wang at MSKCC)
-        if "Emily Chen" in doc_map:
-            results.append({
-                "source_node": {"type": "Doctor", "name": "Emily Chen", "specialty": "Pathology Specialist"},
-                "target_node": {"type": "Institution", "name": "Memorial Sloan Kettering Cancer Center"},
-                "relationship": "AFFILIATED_WITH"
-            })
+        # 8. Third Pass: Proximity Fallback (if still nothing)
+        for doc in docs:
+             if not doc["institution"]:
+                  best_inst = None
+                  min_dist = float('inf')
+                  for inst in insts:
+                       dist = abs(doc["start"] - inst["start"])
+                       if dist < 150 and dist < min_dist:
+                            min_dist = dist
+                            best_inst = inst["name"]
+                  doc["institution"] = best_inst
 
-        # Relationships
-        if "Alice Wang" in text and "James Wilson" in text:
-            results.append({
-                "source_node": {"type": "Doctor", "name": "Alice Wang", "specialty": "Oncologist"},
-                "target_node": {"type": "Doctor", "name": "James Wilson"},
-                "relationship": "CO_AUTHOR"
-            })
+        # 9. Add AFFILIATED_WITH results
+        for doc in docs:
+            if doc["institution"]:
+                results.append({
+                    "source_node": {"type": "Doctor", "name": doc["name"], "specialty": doc["specialty"]},
+                    "target_node": {"type": "Institution", "name": doc["institution"]},
+                    "relationship": "AFFILIATED_WITH"
+                })
 
-        if "Alice Wang" in text and "Emily Chen" in text:
-            results.append({
-                "source_node": {"type": "Doctor", "name": "Alice Wang", "specialty": "Oncologist"},
-                "target_node": {"type": "Doctor", "name": "Emily Chen", "specialty": "Pathology Specialist"},
-                "relationship": "COLLEAGUE"
-            })
+        # 10. Identify Relationships (CO_AUTHOR, COLLEAGUE)
+        for snt in sentences:
+            sent_docs = []
+            for d in docs:
+                # Basic matching in the sentence
+                if d["name"] in snt or d["name"].split()[-1] in snt:
+                    sent_docs.append(d)
 
-        # Final cleanup: remove null specialties
+            # Deduplicate by name
+            u_docs = []
+            u_names = set()
+            for sd in sent_docs:
+                if sd["name"] not in u_names:
+                    u_docs.append(sd)
+                    u_names.add(sd["name"])
+
+            if len(u_docs) >= 2:
+                # Determine relationship based on keywords
+                is_coauthor = any(x in snt.lower() for x in ["published", "research", "clinical trial", "co-authored", "paper"])
+                is_colleague = any(x in snt.lower() for x in ["colleague", "department", "team", "closely"])
+
+                for i in range(len(u_docs)):
+                    for j in range(i + 1, len(u_docs)):
+                        d1 = u_docs[i]
+                        d2 = u_docs[j]
+
+                        if is_coauthor:
+                            results.append({
+                                "source_node": {"type": "Doctor", "name": d1["name"], "specialty": d1["specialty"]},
+                                "target_node": {"type": "Doctor", "name": d2["name"], "specialty": d2["specialty"]},
+                                "relationship": "CO_AUTHOR"
+                            })
+                        if is_colleague:
+                            results.append({
+                                "source_node": {"type": "Doctor", "name": d1["name"], "specialty": d1["specialty"]},
+                                "target_node": {"type": "Doctor", "name": d2["name"], "specialty": d2["specialty"]},
+                                "relationship": "COLLEAGUE"
+                            })
+
+        # 11. Final Deduplication and Formatting
+        final_results = []
+        seen_keys = set()
         for r in results:
-            if r["source_node"].get("specialty") == "null":
-                del r["source_node"]["specialty"]
-            if "specialty" in r["target_node"] and r["target_node"]["specialty"] == "null":
-                del r["target_node"]["specialty"]
+            if r["target_node"]["type"] == "Doctor":
+                # Order insensitive key for Doctor-Doctor
+                names = sorted([r["source_node"]["name"], r["target_node"]["name"]])
+                key = (r["relationship"], names[0], names[1])
+            else:
+                key = (r["relationship"], r["source_node"]["name"], r["target_node"]["name"])
 
-        return json.dumps(results, indent=2, ensure_ascii=False)
+            if key not in seen_keys:
+                final_results.append(r)
+                seen_keys.add(key)
+
+        return json.dumps(final_results, indent=2, ensure_ascii=False)
 
 if __name__ == "__main__":
-    import sys
-    text = sys.argv[1] if len(sys.argv) > 1 else ""
+    if not sys.stdin.isatty():
+        input_data = sys.stdin.read()
+    elif len(sys.argv) > 1:
+        input_data = sys.argv[1]
+    else:
+        input_data = ""
     extractor = MedicalNetworkExtractor()
-    print(extractor.extract(text))
+    print(extractor.extract(input_data))
