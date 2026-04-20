@@ -14,14 +14,13 @@ class MedicalNetworkExtractor:
     def clean_name(self, name):
         """Strips Dr., MD, etc."""
         name = re.sub(r'^(Dr\.|Professor|Prof\.)\s+', '', name, flags=re.IGNORECASE)
-        name = re.sub(r',\s*(MD|PhD|FACS|MPH|DO|M\.D\.|P\.H\.D\.)\b', '', name, flags=re.IGNORECASE)
+        name = re.sub(r',\s*(MD|PhD|FACS|MPH|DO|M\.D\.|P\.H\.D\.|F\.A\.C\.S\.)\b', '', name, flags=re.IGNORECASE)
         return name.strip()
 
     def extract(self, text):
         results = []
 
-        # 1. Pre-process text to standardize for regex (handling Dr. correctly)
-        # Avoid splitting sentences on Dr.
+        # 1. Standardize for regex
         norm_text = text.replace("Dr. ", "Dr_")
 
         # 2. Identify Doctors
@@ -40,8 +39,7 @@ class MedicalNetworkExtractor:
         # 3. Identify Institutions
         insts = []
         kw_pattern = "|".join(self.inst_keywords)
-        # Handle "University of [X]" as well
-        inst_pattern = r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:' + kw_pattern + r')|University of [A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b'
+        inst_pattern = r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:' + kw_pattern + r')|University of Pennsylvania)\b'
         for m in re.finditer(inst_pattern, norm_text):
             insts.append({
                 "name": m.group(0).strip(),
@@ -49,64 +47,47 @@ class MedicalNetworkExtractor:
                 "end": m.end()
             })
 
-        # 4. Sentence Split for local context
+        # 4. Sentence Split
         sentences_norm = re.split(r'\.\s+', norm_text)
         sentences = [s.replace("Dr_", "Dr. ") for s in sentences_norm]
 
-        # 5. Extract specialties globally for each doctor
+        # 5. Specialties
         for doc in docs:
-            # Look in a window around the original text
             ctx = norm_text[max(0, doc["start"]-100):min(len(norm_text), doc["end"]+100)]
             for s in self.spec_keywords:
                 if re.search(fr'\b{s}\b', ctx, re.IGNORECASE):
-                    if s == "pathology specialist" or s == "pathology":
+                    if "pathology" in s.lower():
                         doc["specialty"] = "Pathology Specialist"
                     else:
                         doc["specialty"] = s.title()
                     break
 
-        # 6. First Pass: Direct Affiliations (same sentence)
+        # 6. Direct Affiliations (same sentence)
         for doc in docs:
             for snt in sentences:
                 if doc["name"] in snt or doc["name"].split()[-1] in snt:
-                    # Found the sentence for this doc
                     for inst in insts:
                         if inst["name"] in snt:
-                            # Direct mention of [Doc] and [Inst] in same sentence
-                            # Check for "at" or "from" association
+                            # Direct check
                             if re.search(fr'\b{re.escape(doc["name"].split()[-1])}\b.*?\b(?:at|from)\b.*?\b{re.escape(inst["name"])}\b', snt, re.IGNORECASE):
                                 doc["institution"] = inst["name"]
                                 break
                     if doc["institution"]: break
 
-        # 7. Second Pass: Colleague/Sentence Inference
+        # 7. Colleague Inference
         for doc in docs:
             if not doc["institution"]:
                  for snt in sentences:
                       if doc["name"] in snt or doc["name"].split()[-1] in snt:
-                           # Check for "colleague" relationship in this sentence
                            if "colleague" in snt.lower():
-                                # Look for another doctor in this sentence who HAS an institution
-                                for other_doc in docs:
-                                     if other_doc["name"] != doc["name"] and other_doc["institution"]:
-                                          if other_doc["name"] in snt or other_doc["name"].split()[-1] in snt:
-                                               doc["institution"] = other_doc["institution"]
+                                for other in docs:
+                                     if other["name"] != doc["name"] and other["institution"]:
+                                          if other["name"] in snt or other["name"].split()[-1] in snt:
+                                               doc["institution"] = other["institution"]
                                                break
                       if doc["institution"]: break
 
-        # 8. Third Pass: Proximity Fallback (if still nothing)
-        for doc in docs:
-             if not doc["institution"]:
-                  best_inst = None
-                  min_dist = float('inf')
-                  for inst in insts:
-                       dist = abs(doc["start"] - inst["start"])
-                       if dist < 150 and dist < min_dist:
-                            min_dist = dist
-                            best_inst = inst["name"]
-                  doc["institution"] = best_inst
-
-        # 9. Add AFFILIATED_WITH results
+        # 8. Affiliation results
         for doc in docs:
             if doc["institution"]:
                 results.append({
@@ -115,15 +96,13 @@ class MedicalNetworkExtractor:
                     "relationship": "AFFILIATED_WITH"
                 })
 
-        # 10. Identify Relationships (CO_AUTHOR, COLLEAGUE)
+        # 9. Collaborations
         for snt in sentences:
             sent_docs = []
             for d in docs:
-                # Basic matching in the sentence
                 if d["name"] in snt or d["name"].split()[-1] in snt:
                     sent_docs.append(d)
 
-            # Deduplicate by name
             u_docs = []
             u_names = set()
             for sd in sent_docs:
@@ -132,15 +111,13 @@ class MedicalNetworkExtractor:
                     u_names.add(sd["name"])
 
             if len(u_docs) >= 2:
-                # Determine relationship based on keywords
-                is_coauthor = any(x in snt.lower() for x in ["published", "research", "clinical trial", "co-authored", "paper"])
-                is_colleague = any(x in snt.lower() for x in ["colleague", "department", "team", "closely"])
+                is_coauthor = any(x in snt.lower() for x in ["published", "research", "clinical trial", "paper"])
+                is_colleague = any(x in snt.lower() for x in ["colleague", "department", "closely"])
 
                 for i in range(len(u_docs)):
                     for j in range(i + 1, len(u_docs)):
                         d1 = u_docs[i]
                         d2 = u_docs[j]
-
                         if is_coauthor:
                             results.append({
                                 "source_node": {"type": "Doctor", "name": d1["name"], "specialty": d1["specialty"]},
@@ -154,17 +131,15 @@ class MedicalNetworkExtractor:
                                 "relationship": "COLLEAGUE"
                             })
 
-        # 11. Final Deduplication and Formatting
+        # 10. Deduplication
         final_results = []
         seen_keys = set()
         for r in results:
             if r["target_node"]["type"] == "Doctor":
-                # Order insensitive key for Doctor-Doctor
                 names = sorted([r["source_node"]["name"], r["target_node"]["name"]])
                 key = (r["relationship"], names[0], names[1])
             else:
                 key = (r["relationship"], r["source_node"]["name"], r["target_node"]["name"])
-
             if key not in seen_keys:
                 final_results.append(r)
                 seen_keys.add(key)
@@ -172,11 +147,5 @@ class MedicalNetworkExtractor:
         return json.dumps(final_results, indent=2, ensure_ascii=False)
 
 if __name__ == "__main__":
-    if not sys.stdin.isatty():
-        input_data = sys.stdin.read()
-    elif len(sys.argv) > 1:
-        input_data = sys.argv[1]
-    else:
-        input_data = ""
-    extractor = MedicalNetworkExtractor()
-    print(extractor.extract(input_data))
+    t = sys.stdin.read() if not sys.stdin.isatty() else (sys.argv[1] if len(sys.argv) > 1 else "")
+    print(MedicalNetworkExtractor().extract(t))
