@@ -1,0 +1,11 @@
+--- 340B OPAIS CHANNEL INTELLIGENCE SUMMARY ---
+Average contract pharmacies per hospital: 37.00
+
+Top 10 Super Procurement Centers:
+hospital_340b_id          hospital_name  pharmacy_count
+       DSH210009 JOHNS HOPKINS HOSPITAL              37
+
+Distributor Distribution:
+       distributor  count  percentage
+Unknown / Regional     36        97.3
+          McKesson      1         2.7
