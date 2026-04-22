@@ -1,0 +1,20 @@
+--- 340B OPAIS CHANNEL INTELLIGENCE SUMMARY ---
+Average contract pharmacies per hospital: 57.56
+
+Top 10 Super Procurement Centers:
+hospital_340b_id              hospital_name  pharmacy_count
+       DSH210006  Hospital Center 6 - North              99
+       DSH210016 Hospital Center 16 - North              96
+       DSH210042 Hospital Center 42 - North              95
+       DSH210046 Hospital Center 46 - North              91
+       DSH210007  Regional Medical Center 7              90
+       DSH210024 Hospital Center 24 - North              89
+       DSH210045 Regional Medical Center 45              89
+       DSH210012 Hospital Center 12 - North              88
+       DSH210038 Hospital Center 38 - North              87
+       DSH210011 Regional Medical Center 11              86
+
+Distributor Distribution:
+    distributor  count  percentage
+       McKesson   2169       75.36
+Cardinal Health    709       24.64

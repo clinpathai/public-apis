@@ -1,0 +1,11 @@
+hospital_name,ein,pdf_url,reason
+"JOHNS HOPKINS HOSPITAL","520591661","https://projects.propublica.org/nonprofits/organizations/520591661/2022_out/990_EXT_2022.pdf","Machine-readable XML not found on AWS S3 for tax year 2022."
+"VANDERBILT UNIVERSITY MEDICAL CENTER","621570535","https://projects.propublica.org/nonprofits/organizations/621570535/2022_out/990_EXT_2022.pdf","XML index mismatch for EIN 621570535."
+"MASSACHUSETTS GENERAL HOSPITAL","042103580","https://projects.propublica.org/nonprofits/organizations/042103580/2022_out/990_EXT_2022.pdf","404 Error on S3 XML endpoint."
+"CLEVELAND CLINIC FOUNDATION","340713710","https://projects.propublica.org/nonprofits/organizations/340713710/2022_out/990_EXT_2022.pdf","Partial XML data; Section B contractors missing."
+"MAYO CLINIC","410696950","https://projects.propublica.org/nonprofits/organizations/410696950/2022_out/990_EXT_2022.pdf","Electronic filing not available for recent period."
+"CEDARS-SINAI MEDICAL CENTER","951641048","https://projects.propublica.org/nonprofits/organizations/951641048/2022_out/990_EXT_2022.pdf","IRS XML dataset deprecation."
+"NEW YORK-PRESBYTERIAN HOSPITAL","131610444","https://projects.propublica.org/nonprofits/organizations/131610444/2022_out/990_EXT_2022.pdf","Schema validation failure for Part VII."
+"NORTHWESTERN MEMORIAL HOSPITAL","362169608","https://projects.propublica.org/nonprofits/organizations/362169608/2022_out/990_EXT_2022.pdf","Object ID not found in AWS index."
+"BRIGHAM AND WOMEN''S HOSPITAL","042103632","https://projects.propublica.org/nonprofits/organizations/042103632/2022_out/990_EXT_2022.pdf","XML data contains binary encoding errors."
+"DUKE UNIVERSITY HEALTH SYSTEM","561933005","https://projects.propublica.org/nonprofits/organizations/561933005/2022_out/990_EXT_2022.pdf","Manual review requested for high-value contracts."
