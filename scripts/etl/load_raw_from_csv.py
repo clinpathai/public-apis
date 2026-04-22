@@ -29,7 +29,12 @@ def load_data(csv_path, table_name, schema='raw'):
             cols = ", ".join([f"{col} TEXT" for col in df.columns])
             f.write(f"CREATE TABLE IF NOT EXISTS {schema}.{table_name} ({cols});\n")
             for _, row in df.iterrows():
-                vals = ", ".join([f"'{str(v).replace("'", "''")}'" for v in row.values])
+                # Fixed syntax error: avoiding nested quotes issue in f-strings
+                val_list = []
+                for v in row.values:
+                    escaped = str(v).replace("'", "''")
+                    val_list.append(f"'{escaped}'")
+                vals = ", ".join(val_list)
                 f.write(f"INSERT INTO {schema}.{table_name} VALUES ({vals});\n")
         print("SQL fallback generation complete.")
 

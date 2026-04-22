@@ -2,10 +2,10 @@ import os
 from sqlalchemy import create_engine
 
 def get_db_engine():
-    # Load from config/database.env
-    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config/database.env')
+    # Corrected path: point to project root config/database.env
+    env_path = os.path.join(os.getcwd(), 'config/database.env')
 
-    # Simple parser for .env if python-dotenv is not installed
+    # Simple parser for .env
     config = {}
     if os.path.exists(env_path):
         with open(env_path, 'r') as f:
