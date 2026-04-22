@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import shutil
 
 def associate_tic_340b(tic_csv, opais_mapping_csv, output_csv="data/processed/tic_hospital_rates_enriched.csv"):
     if not os.path.exists(tic_csv) or not os.path.exists(opais_mapping_csv):
