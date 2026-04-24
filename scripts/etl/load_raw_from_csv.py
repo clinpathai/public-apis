@@ -34,10 +34,46 @@ def load_data(csv_path, table_name, schema='raw'):
         print(f"Loading into {schema}.{table_name}...")
         df.to_sql(table_name, engine, schema=schema, if_exists='replace', index=False)
 
-        success_msg = f"Successfully loaded {len(df)} rows into {schema}.{table_name}"
+        if run_id:
+            log_pipeline_step(engine, run_id, f"Load to {schema}.{table_name}", status='SUCCESS')
+
+        # Upsert logic for core.company (Aplus Core Entity)
+        print("Performing upsert into core.company...")
+        with engine.connect() as conn:
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS core;"))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS core.company (
+                    name TEXT PRIMARY KEY,
+                    category TEXT,
+                    physician_count TEXT,
+                    scale TEXT,
+                    ownership TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+            for _, row in df.iterrows():
+                conn.execute(text("""
+                    INSERT INTO core.company (name, category, physician_count, scale, ownership)
+                    VALUES (:name, :cat, :phys, :scale, :own)
+                    ON CONFLICT (name) DO UPDATE SET
+                        category = EXCLUDED.category,
+                        physician_count = EXCLUDED.physician_count,
+                        scale = EXCLUDED.scale,
+                        ownership = EXCLUDED.ownership,
+                        updated_at = CURRENT_TIMESTAMP;
+                """), {
+                    "name": row['Company'],
+                    "cat": row['Growth Category'],
+                    "phys": row['Physician Density'],
+                    "scale": row['Scale Metric'],
+                    "own": row['Ownership Structure']
+                })
+            conn.commit()
+
+        success_msg = f"Successfully loaded {len(df)} rows and upserted into core.company"
         print(success_msg)
         if run_id:
-            log_pipeline_step(engine, run_id, "To SQL", status='SUCCESS')
+            log_pipeline_step(engine, run_id, "Upsert to core.company", status='SUCCESS')
             log_pipeline_run(engine, pipeline_name, status='COMPLETED', details=success_msg)
 
     except Exception as e:
